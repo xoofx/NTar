@@ -27,6 +27,8 @@ using System.IO;
 using System.Text;
 
 // ----------------------------------------------------------------------------
+// Latest version of this file is available at: https://github.com/xoofx/NTar
+// ----------------------------------------------------------------------------
 // This is a single file version to untar a stream.
 // Define preprocessor NTAR_PUBLIC to have this class public
 // ----------------------------------------------------------------------------
@@ -72,7 +74,7 @@ namespace NTar
         /// Untars the specified input stream and returns a stream for each file entry. 
         /// </summary>
         /// <param name="inputStream">The input stream.</param>
-        /// <returns>An enumeration of file entries. The inputstream can be read on each entry with a length of <see cref="FileOutput.Length"/></returns>
+        /// <returns>An enumeration of file entries. The inputstream can be read on each entry with a length of <see cref="TarEntryStream.Length"/></returns>
         public static IEnumerable<TarEntryStream> Untar(this Stream inputStream)
         {
             var header = new byte[512];
@@ -82,14 +84,14 @@ namespace NTar
                 int zeroBlockCount = 0;
                 while (true)
                 {
-                    // Read the header
+                    // Read the 512 byte block header
                     int length = inputStream.Read(header, 0, header.Length);
                     if (length < 512)
                     {
                         yield break;
                     }
 
-                    // If it is full of zero, exit
+                    // Check if the block is full of zero
                     bool isZero = true;
                     for (int i = 0; i < header.Length; i++)
                     {
@@ -102,6 +104,7 @@ namespace NTar
 
                     if (isZero)
                     {
+                        // If it is full of zero two consecutive times, we have to exit
                         zeroBlockCount++;
                         if (zeroBlockCount == 1)
                         {
@@ -133,6 +136,7 @@ namespace NTar
                     checksumVerif += c;
                 }
 
+                // Checksum is invalid, exit
                 if (checksum.Value != checksumVerif)
                 {
                     yield break;
@@ -146,26 +150,27 @@ namespace NTar
                 }
 
                 var fileLength = fileSizeRead.Value;
+
+                // The end of the file entry is aligned on 512 bytes
                 long seekNextPosition = ((inputStream.Position + fileLength + 511) & ~511);
 
-                // Read type
+                // Read the type of the file entry
                 var type = header[156];
-                // Skip anything that is not a file
+                // We support only the File type
                 if (type == '0')
                 {
-                    // read file name
+                    // Read file name
                     var fileName = GetString(header, 0, 100);
 
-                    // read timestamp
+                    // Read timestamp
                     var unixTimeStamp = ReadOctal(header, 136, 12);
                     if (!unixTimeStamp.HasValue)
                     {
                         yield break;
                     }
-
                     var lastModifiedTime = Epoch.AddSeconds(unixTimeStamp.Value).ToLocalTime();
 
-                    // Double check ustar
+                    // Double check magic ustar to load prefix filename
                     var ustar = GetString(header, 257, 8);
                     // Check for ustar only
                     if (ustar != null && ustar.Trim() == "ustar")
@@ -175,6 +180,7 @@ namespace NTar
                         fileName = prefixFileName + fileName;
                     }
 
+                    // Wrap the region into a slice of the original stream
                     yield return new TarEntryStream(inputStream, inputStream.Position, fileLength)
                     {
                         FileName = fileName,
@@ -186,6 +192,13 @@ namespace NTar
             }
         }
 
+        /// <summary>
+        /// Gets an ASCII string ending by a `\0`
+        /// </summary>
+        /// <param name="buffer">The buffer.</param>
+        /// <param name="index">The index.</param>
+        /// <param name="count">The count.</param>
+        /// <returns>A string</returns>
         private static string GetString(byte[] buffer, int index, int count)
         {
             var text = new StringBuilder();
@@ -201,6 +214,13 @@ namespace NTar
             return text.ToString();
         }
 
+        /// <summary>
+        /// Reads an octal number converted to integer.
+        /// </summary>
+        /// <param name="buffer">The buffer.</param>
+        /// <param name="index">The index.</param>
+        /// <param name="count">The count.</param>
+        /// <returns>An octal number converted to a long; otherwise <c>null</c> if the conversion failed</returns>
         private static long? ReadOctal(byte[] buffer, int index, int count)
         {
             long value = 0;
