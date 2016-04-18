@@ -56,6 +56,8 @@ namespace NTar
         {
             if (outputDirectory == null) throw new ArgumentNullException(nameof(outputDirectory));
 
+            outputDirectory = Path.GetFullPath(outputDirectory);
+
             // Untar the stream
             foreach (var entryStream in stream.Untar())
             {
