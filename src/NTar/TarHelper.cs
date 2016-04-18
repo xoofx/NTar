@@ -53,6 +53,7 @@ namespace NTar
         /// <param name="stream">The stream.</param>
         /// <param name="outputDirectory">The output directory.</param>
         /// <exception cref="System.ArgumentNullException"></exception>
+        /// <exception cref="InvalidDataException">If an invalid entry was found</exception>
         public static void UntarTo(this Stream stream, string outputDirectory)
         {
             if (outputDirectory == null) throw new ArgumentNullException(nameof(outputDirectory));
@@ -78,6 +79,7 @@ namespace NTar
         /// </summary>
         /// <param name="inputStream">The input stream.</param>
         /// <returns>An enumeration of file entries. The inputstream can be read on each entry with a length of <see cref="TarEntryStream.Length"/></returns>
+        /// <exception cref="InvalidDataException">If an invalid entry was found</exception>
         public static IEnumerable<TarEntryStream> Untar(this Stream inputStream)
         {
             var header = new byte[512];
@@ -93,7 +95,7 @@ namespace NTar
                     int length = inputStream.Read(header, 0, header.Length);
                     if (length < 512)
                     {
-                        yield break;
+                        throw new InvalidDataException($"Invalid header block size < 512");
                     }
                     position += length;
 
@@ -123,11 +125,14 @@ namespace NTar
                     }
                 }
 
+                // Read file name
+                var fileName = GetString(header, 0, 100);
+
                 // read checksum
                 var checksum = ReadOctal(header, 148, 8);
                 if (!checksum.HasValue)
                 {
-                    yield break;
+                    throw new InvalidDataException($"Invalid checksum for file entry [{fileName}] ");
                 }
 
                 // verify checksum
@@ -145,32 +150,30 @@ namespace NTar
                 // Checksum is invalid, exit
                 if (checksum.Value != checksumVerif)
                 {
-                    yield break;
+                    throw new InvalidDataException($"Invalid checksum verification for file entry [{fileName}] ");
                 }
 
                 // Read file size
                 var fileSizeRead = ReadOctal(header, 124, 12);
                 if (!fileSizeRead.HasValue)
                 {
-                    yield break;
+                    throw new InvalidDataException($"Invalid filesize for file entry [{fileName}] ");
                 }
 
                 var fileLength = fileSizeRead.Value;
 
+                
                 // Read the type of the file entry
                 var type = header[156];
                 // We support only the File type
                 TarEntryStream tarEntryStream = null;
                 if (type == '0')
                 {
-                    // Read file name
-                    var fileName = GetString(header, 0, 100);
-
                     // Read timestamp
                     var unixTimeStamp = ReadOctal(header, 136, 12);
                     if (!unixTimeStamp.HasValue)
                     {
-                        yield break;
+                        throw new InvalidDataException($"Invalid timestamp for file entry [{fileName}] ");
                     }
                     var lastModifiedTime = Epoch.AddSeconds(unixTimeStamp.Value).ToLocalTime();
 
@@ -200,11 +203,26 @@ namespace NTar
                 {
                     position += tarEntryStream.Position;
                 }
+
+                // We seek to untilPosition by reading the remaining bytes
+                // as we don't want to rely on stream.Seek/Position as it is
+                // not working with GzipStream for example
                 int delta;
                 while ((delta = (int)(untilPosition - position)) > 0)
                 {
                     delta = Math.Min(512, delta);
-                    position += inputStream.Read(header, 0, delta);
+                    var readCount = inputStream.Read(header, 0, delta);
+                    position += readCount;
+                    if (readCount == 0)
+                    {
+                        break;
+                    }
+                }
+
+                // If we are not at target position, there is an error, so exit
+                if ((untilPosition - position) != 0)
+                {
+                    throw new InvalidDataException($"Invalid end of entry after file entry [{fileName}] ");
                 }
             }
         }
@@ -304,16 +322,7 @@ namespace NTar
 
             public override long Seek(long offset, SeekOrigin origin)
             {
-                long realOffset = offset;
-                if (origin == SeekOrigin.Begin)
-                {
-                    realOffset += start;
-                }
-                else if (origin == SeekOrigin.End)
-                {
-                    realOffset = start + Length - realOffset;
-                }
-                return stream.Seek(realOffset, origin) - start;
+                throw new NotSupportedException();
             }
 
             public override void SetLength(long value)
@@ -340,8 +349,9 @@ namespace NTar
             }
 
             public override bool CanRead => true;
-            public override bool CanSeek => true;
+            public override bool CanSeek => false;
             public override bool CanWrite => false;
+
             public override long Length { get; }
 
             public override long Position
