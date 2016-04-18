@@ -21,6 +21,7 @@
 // CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -81,6 +82,8 @@ namespace NTar
         {
             var header = new byte[512];
 
+            long position = 0;
+
             while (true)
             {
                 int zeroBlockCount = 0;
@@ -92,6 +95,7 @@ namespace NTar
                     {
                         yield break;
                     }
+                    position += length;
 
                     // Check if the block is full of zero
                     bool isZero = true;
@@ -153,12 +157,10 @@ namespace NTar
 
                 var fileLength = fileSizeRead.Value;
 
-                // The end of the file entry is aligned on 512 bytes
-                long seekNextPosition = ((inputStream.Position + fileLength + 511) & ~511);
-
                 // Read the type of the file entry
                 var type = header[156];
                 // We support only the File type
+                TarEntryStream tarEntryStream = null;
                 if (type == '0')
                 {
                     // Read file name
@@ -182,15 +184,28 @@ namespace NTar
                         fileName = prefixFileName + fileName;
                     }
 
-                    // Wrap the region into a slice of the original stream
-                    yield return new TarEntryStream(inputStream, inputStream.Position, fileLength)
+                    tarEntryStream = new TarEntryStream(inputStream, position, fileLength)
                     {
                         FileName = fileName,
                         LastModifiedTime = lastModifiedTime
                     };
+
+                    // Wrap the region into a slice of the original stream
+                    yield return tarEntryStream;
                 }
 
-                inputStream.Seek(seekNextPosition, SeekOrigin.Begin);
+                // The end of the file entry is aligned on 512 bytes
+                var untilPosition = (position + fileLength + 511) & ~511;
+                if (tarEntryStream != null)
+                {
+                    position += tarEntryStream.Position;
+                }
+                int delta;
+                while ((delta = (int)(untilPosition - position)) > 0)
+                {
+                    delta = Math.Min(512, delta);
+                    position += inputStream.Read(header, 0, delta);
+                }
             }
         }
 
@@ -211,7 +226,7 @@ namespace NTar
                     break;
                 }
 
-                text.Append((char) buffer[i]);
+                text.Append((char)buffer[i]);
             }
             return text.ToString();
         }
@@ -254,6 +269,7 @@ namespace NTar
         {
             private readonly Stream stream;
             private readonly long start;
+            private long position;
 
             /// <summary>
             /// Initializes a new instance of the <see cref="TarEntryStream"/> class.
@@ -267,6 +283,7 @@ namespace NTar
                 if (stream == null) throw new ArgumentNullException(nameof(stream));
                 this.stream = stream;
                 this.start = start;
+                position = start;
                 this.Length = length;
             }
 
@@ -311,8 +328,10 @@ namespace NTar
                 if (offset < 0 || offset >= buffer.Length) throw new ArgumentOutOfRangeException(nameof(offset));
                 if (count == 0) return 0;
 
-                var maxCount = (int)Math.Min(count, start + Length - stream.Position);
-                return stream.Read(buffer, offset, maxCount);
+                var maxCount = (int)Math.Min(count, start + Length - position);
+                var readCount = stream.Read(buffer, offset, maxCount);
+                position += readCount;
+                return readCount;
             }
 
             public override void Write(byte[] buffer, int offset, int count)
@@ -327,8 +346,11 @@ namespace NTar
 
             public override long Position
             {
-                get { return stream.Position - start; }
-                set { stream.Position = value + start;; }
+                get { return position - start; }
+                set
+                {
+                    throw new NotSupportedException();
+                }
             }
         }
     }

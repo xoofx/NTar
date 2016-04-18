@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using NUnit.Framework;
 
 namespace NTar.Tests
@@ -17,6 +18,36 @@ namespace NTar.Tests
         {
             var testDirectory = Path.GetDirectoryName(typeof(Program).Assembly.Location);
             using (var stream = File.OpenRead(Path.Combine(testDirectory, "test.tar")))
+            {
+                CheckStream(stream);
+            }
+        }
+
+        /// <summary>
+        /// Same test as TestEntries, but we perform this through a GzipStream
+        /// </summary>
+        [Test]
+        public void TestEntriesGunzip()
+        {
+            var testDirectory = Path.GetDirectoryName(typeof(Program).Assembly.Location);
+
+            var memoryStream = new MemoryStream();
+            using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Optimal, true))
+            using (var stream = File.OpenRead(Path.Combine(testDirectory, "test.tar")))
+            {
+                stream.CopyTo(gzipStream);
+                gzipStream.Flush();
+            }
+            memoryStream.Position = 0;
+            using (var gunzipStream = new GZipStream(memoryStream, CompressionMode.Decompress))
+            {
+                CheckStream(gunzipStream);
+            }
+        }
+
+        public void CheckStream(Stream stream)
+        {
+            var testDirectory = Path.GetDirectoryName(typeof(Program).Assembly.Location);
             {
                 var files = new Dictionary<string, string>();
 
@@ -35,11 +66,15 @@ namespace NTar.Tests
                 Assert.AreEqual("0123456789", files["./a.txt"]);
                 Assert.AreEqual(string.Empty, files["./b/b.txt"]);
 
-                stream.Position = 0;
-                stream.UntarTo(testDirectory);
-                Assert.AreEqual("0123456789", File.ReadAllText(Path.Combine(testDirectory, "./a.txt")));
+                if (stream.CanSeek)
+                {
+                    stream.Position = 0;
+                    stream.UntarTo(testDirectory);
+                    Assert.AreEqual("0123456789", File.ReadAllText(Path.Combine(testDirectory, "./a.txt")));
+                }
             }
         }
+
 
         [Test]
         public void TestToDirectory()
