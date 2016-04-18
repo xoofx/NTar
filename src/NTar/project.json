@@ -1,0 +1,53 @@
+﻿{
+  "title": "NTar",
+  "version": "1.0.0",
+  "authors": [ "Alexandre Mutel" ],
+  "owners": [ "Alexandre Mutel" ],
+  "licenseUrl": "https://github.com/xoofx/NTar/blob/master/license.txt",
+  "projectUrl": "https://github.com/xoofx/NTar",
+  "requireLicenseAcceptance": false,
+  "description": "A single file for deserializing a tar file in .NET",
+  "copyright": "Alexandre Mutel",
+  "language": "en-US",
+
+  "configurations": {
+    "Debug": {
+      "compilationOptions": {
+        "define": [ "DEBUG", "TRACE", "NTAR_PUBLIC" ]
+      }
+    },
+    "Release": {
+      "compilationOptions": {
+        "define": [ "RELEASE", "TRACE", "NTAR_PUBLIC" ],
+        "optimize": true
+      }
+    }
+  },
+
+  "frameworks": {
+    "net45": {
+      "frameworkAssemblies": {
+        "mscorlib": "",
+        "System": "",
+        "System.Core": ""
+      }
+    },
+    "dotnet5.4": {
+      "compilationOptions": {
+        "define": [ "CORE" ]
+      },
+      "dependencies": {
+        "Microsoft.NETCore": "5.0.1-beta-23516",
+        "Microsoft.NETCore.Platforms": "1.0.1-beta-23516",
+        "Microsoft.NETCore.Portable.Compatibility": "1.0.1-beta-23516",
+        "System.Runtime.Extensions": "4.0.11-beta-23516",
+        "System.Reflection": "4.1.0-beta-23516",
+        "System.Collections": "4.0.11-beta-23516",
+        "System.Linq": "4.0.1-beta-23516",
+        "System.Threading": "4.0.11-beta-23516",
+        "System.Runtime": "4.0.21-beta-23516",
+        "Microsoft.CSharp": "4.0.1-beta-23516"
+      }
+    }
+  }
+}
